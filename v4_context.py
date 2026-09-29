@@ -1,5 +1,6 @@
-"""v4: long-running tasks. Trim the transcript sent to the model, and keep a todo list
-outside the transcript so the plan survives trimming."""
+# v4 => long tasks. trim the transcript we send to the model, and keep the todo list outside the transcript
+# so the plan survives the trimming
+
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -52,10 +53,10 @@ def shrink(m: Message) -> Message:
     return replace(m, tool_results=[replace(r, output="[output trimmed]") for r in m.tool_results])
 
 
+# keeps the task + the last few model/tool pairs. older tool outputs get blanked first, then the oldest pairs are dropped
+# pairs stay together so every tool call still has its result (the api rejects the history otherwise)
+# recent pairs are never dropped, even if they alone are over the budget
 def trim(messages: list[Message], max_chars: int, keep_turns: int = 2) -> list[Message]:
-    """Keep the task and the last `keep_turns` model/tool pairs. Blank out older tool outputs first,
-    then drop the oldest pairs until under budget. Pairs stay together so the history remains valid.
-    The recent pairs are never dropped, even if they alone exceed the budget."""
     if total(messages) <= max_chars:
         return messages
     head, rest = messages[0], messages[1:]
@@ -79,8 +80,9 @@ def run_agent(task: str, model: Model, root: Path, approve: Callable[[ToolCall],
     by_name = {t.name: t for t in tools}
     messages = [Message("user", task)]
     for step in range(1, max_steps + 1):
+        # todo list goes in the system prompt every turn -> trimming cant erase the plan
         system = SYSTEM + (f"\n\nCurrent todo list:\n{render(plan)}" if plan else "")
-        sent = trim(messages, max_chars)
+        sent = trim(messages, max_chars)  # only this copy is trimmed, messages keeps the full history
         if sent is not messages:
             trace.log("trim", f"{len(messages)} msgs/{total(messages)} chars -> {len(sent)} msgs/{total(sent)} chars")
         msg = model.generate(sent, tools, system)

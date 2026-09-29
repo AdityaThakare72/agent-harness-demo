@@ -1,4 +1,5 @@
-"""v0: the model alone. One prompt in, one answer out. No tools, no loop."""
+# v0 => model alone. one prompt goes in, one answer comes out. no tools, no loop
+
 import sys
 
 from harness import cli, scripts

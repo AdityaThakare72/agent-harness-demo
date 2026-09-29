@@ -1,4 +1,5 @@
-"""v1: the agent loop. Call the model, run any tool it asks for, feed the result back, repeat."""
+# v1 => the agent loop. call the model -> if it asks for a tool, run it and feed the result back -> repeat
+
 import sys
 from pathlib import Path
 
@@ -26,7 +27,7 @@ TOOLS = [Tool(
 def run_agent(task: str, model: Model, trace: Trace, tools: list[Tool] = TOOLS) -> str:
     by_name = {t.name: t for t in tools}
     messages = [Message("user", task)]
-    while True:
+    while True:  # keeps going till the model replies without asking for a tool
         msg = model.generate(messages, tools, SYSTEM)
         messages.append(msg)
         trace.log("model", f"{msg.text!r} tool_calls={[c.name for c in msg.tool_calls]}")

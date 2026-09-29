@@ -1,5 +1,6 @@
-"""v2: more tools. Same loop as v1, but the agent can now list, read, write and run commands.
-Nothing is restricted yet, and a failing tool crashes the run. v3 fixes both."""
+# v2 => same loop as v1, only more tools (read, write, list, shell)
+# nothing is restricted here and if a tool fails the whole run crashes. v3 fixes both
+
 import subprocess
 import sys
 from pathlib import Path
@@ -45,7 +46,7 @@ TOOLS = [
 def run_agent(task: str, model: Model, trace: Trace, tools: list[Tool] = TOOLS) -> str:
     by_name = {t.name: t for t in tools}
     messages = [Message("user", task)]
-    while True:
+    while True:  # same loop as v1
         msg = model.generate(messages, tools, SYSTEM)
         messages.append(msg)
         trace.log("model", f"{msg.text!r} tool_calls={[c.name for c in msg.tool_calls]}")

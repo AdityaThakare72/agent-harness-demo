@@ -23,18 +23,18 @@ class ToolResult:
 
 @dataclass
 class Message:
-    role: str  # "user" | "model" | "tool"
+    role: str  # "user", "model" or "tool"
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
-    raw: Any = None  # provider-native object, echoed back to the provider as-is
+    raw: Any = None  # the provider's original response, sent back as it is (gemini 3 needs its thought signatures back)
 
 
 @dataclass
 class Tool:
     name: str
     description: str
-    parameters: dict  # JSON schema
+    parameters: dict  # json schema
     fn: Callable[..., str]
     risky: bool = False
 
@@ -47,7 +47,8 @@ def reply(text: str = "", *calls: tuple[str, dict]) -> Message:
 class Model(ABC):
     @abstractmethod
     def generate(self, messages: list[Message], tools: list[Tool], system: str = "") -> Message:
-        """Return the next model message: text, tool calls, or both."""
+        # returns the next model message -> text, tool calls or both
+        ...
 
 
 class FakeModel(Model):

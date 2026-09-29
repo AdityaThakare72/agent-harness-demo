@@ -1,5 +1,6 @@
-"""v3: guardrails. Permission prompts, a sandbox folder, a step limit, and tool errors
-returned to the model (so it can recover) instead of crashing the run."""
+# v3 => guardrails. permission prompt before write/shell, files stay inside the sandbox folder, a max steps limit
+# and tool errors go back to the model as results so it can recover instead of the run crashing
+
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -24,14 +25,14 @@ class ToolError(Exception):
 class Result:
     text: str
     steps: int
-    stop: str  # "done" | "max_steps"
+    stop: str  # "done" or "max_steps"
 
 
 def make_tools(root: Path) -> list[Tool]:
     root = root.resolve()
 
     def safe(path: str) -> Path:
-        p = (root / path).resolve()
+        p = (root / path).resolve()  # resolve() also follows symlinks, so a link pointing outside gets caught too
         if not p.is_relative_to(root):
             raise ToolError(f"path '{path}' is outside the sandbox")
         return p
@@ -75,7 +76,7 @@ def execute(call: ToolCall, by_name: dict[str, Tool], approve: Callable[[ToolCal
     if tool is None:
         return fail(f"unknown tool '{call.name}'")
     if tool.risky and not approve(call):
-        trace.log("denied", f"{call.name}({call.args})")
+        trace.log("denied", f"{call.name}({call.args})")  # not an exception, the model just gets told and can try something else
         return fail("permission denied by user")
     try:
         output = tool.fn(**call.args)
@@ -89,7 +90,7 @@ def run_agent(task: str, model: Model, root: Path, approve: Callable[[ToolCall],
     tools = make_tools(root)
     by_name = {t.name: t for t in tools}
     messages = [Message("user", task)]
-    for step in range(1, max_steps + 1):
+    for step in range(1, max_steps + 1):  # step limit so a looping model cant run forever
         msg = model.generate(messages, tools, SYSTEM)
         messages.append(msg)
         trace.log("model", f"step {step}: {msg.text!r} tool_calls={[c.name for c in msg.tool_calls]}")
