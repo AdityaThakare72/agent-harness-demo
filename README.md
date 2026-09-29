@@ -1,100 +1,104 @@
 # agent-harness-demo
 
-A minimal agent harness in Python, built up in five runnable stages (v0 to v4). Each stage adds one idea, so the diff between two neighbouring files is the lesson. The core is model-agnostic; Gemini (google-genai) is one adapter, and a scripted FakeModel drives the tests and the offline demos.
+A small agent harness in Python, built in five stages where each stage adds one thing to the one before. It's meant for teaching: put two neighbouring files side by side and the diff is the lesson.
 
-Demo task for every stage: read the text files in `sandbox/` and write a summary report.
+The model sits behind a tiny interface. There's a Gemini adapter (google-genai) and a FakeModel that replays a script. The tests and the offline demos use the fake, so nothing here needs an API key unless you want to talk to a real model.
+
+Every stage runs the same task: read the text files in `sandbox/` and write a summary report.
 
 ## Setup
 
-Python 3.10+.
+Python 3.10 or newer.
 
     python -m venv .venv
-    source .venv/bin/activate
+    source .venv/bin/activate      # Windows: .venv\Scripts\activate
     pip install -r requirements.txt
-    cp .env.example .env        # then put your key in .env: GEMINI_API_KEY=...
+    cp .env.example .env
 
-Get a key at https://aistudio.google.com/apikey. You can also export it in your shell instead of using `.env`: `export GEMINI_API_KEY=...`. The default model is `gemini-3.1-flash-lite`; override it with `GEMINI_MODEL=...` in `.env` or `--model NAME`. Model names change, so check https://ai.google.dev/gemini-api/docs/models if you get a "model not found" error.
+Get a key from https://aistudio.google.com/apikey and put it in `.env` as `GEMINI_API_KEY=...`. Exporting it in your shell works too.
 
-## Run each stage
+The default model is `gemini-3.1-flash-lite`. Google renames and retires models fairly often, so if you get a "model not found" error, set `GEMINI_MODEL` in `.env` or pass `--model NAME`. Current names are at https://ai.google.dev/gemini-api/docs/models.
+
+## Running
 
     python v0_model_only.py
     python v1_loop.py
     python v2_tools.py
-    python v3_safety.py            # asks y/n before write_file and run_shell
+    python v3_safety.py
     python v4_context.py
 
-Add `--fake` to any stage to run it offline against the scripted FakeModel (no key, no network). Add `--yes` to v3/v4 to auto-approve writes. The trace goes to stderr, the final answer to stdout. v2 to v4 write `report.md` (in `sandbox/`), which is git-ignored.
+Add `--fake` to run any stage against the scripted FakeModel, with no key and no network. The fake's "summary" is canned text that matches the sample files, so it only shows the flow, not what a model would write.
 
-Other flags: `--task "..."` to change the task, `--sandbox DIR` and `--max-steps N` (v3, v4), `--max-chars N` (v4).
+The trace (every model turn, tool call and result) goes to stderr and the final answer to stdout. v2 to v4 write `report.md`, which is git-ignored.
+
+Other flags:
+
+- `--task "..."` changes the task
+- `--yes` (v3, v4) approves writes and shell commands without asking
+- `--sandbox DIR` and `--max-steps N` (v3, v4)
+- `--max-chars N` (v4) sets the size at which the transcript gets trimmed
 
 ## Tests
 
     python -m pytest
 
-All tests use FakeModel only. The real API is never called.
+The tests only use FakeModel. The real API is never called.
 
 ## Layout
 
-    harness/model.py    Message/Tool types, Model interface, GeminiModel, FakeModel
-    harness/trace.py    Trace logger (prints and records every event)
-    harness/cli.py      argument parsing, .env loading, model selection
-    harness/scripts.py  scripted replies used by --fake
+    harness/model.py     message and tool types, Model interface, GeminiModel, FakeModel
+    harness/trace.py     trace logger
+    harness/cli.py       argument parsing, .env loading, picking the model
+    harness/scripts.py   the scripted replies behind --fake
     v0_model_only.py ... v4_context.py
-    sandbox/            three sample text files
+    sandbox/             three small text files
     tests/
 
-The `Model` interface is one method: `generate(messages, tools, system) -> Message`. Everything else in the harness talks only to that. `GeminiModel` translates to and from google-genai types; `FakeModel` replays a list of messages and records what it was sent.
+The interface is one method, `generate(messages, tools, system) -> Message`, and the rest of the code only talks to that. GeminiModel converts to and from google-genai types. FakeModel returns the next message from its list and remembers what it was sent, which is what the tests inspect.
 
-## Teaching flow
+## The stages
 
-### v0: the model alone
+### v0: model alone
 
-One prompt in, one answer out. No tools. Ask it to read `sandbox/` and it cannot: at best it says so, at worst it invents contents. The point: a model only produces text; it has no hands.
+One prompt, one answer, no tools. Ask it to read `sandbox/` and it can't. A good model says so; a weaker one may make up contents. Either way it shows that a model on its own only produces text.
 
-Notice: `tools=[]`, no loop.
+### v1: the loop and one tool
 
-### v1: the agent loop and one tool
+Call the model. If it asks for a tool, run it, append the result, and call the model again. Stop when it replies with plain text. That loop is the agent.
 
-The whole idea of an agent is a loop: call the model; if it asks for a tool, run it, append the result, call the model again; stop when it answers in plain text.
+Automatic function calling is turned off in the Gemini adapter, so the SDK doesn't run the loop for you and each step shows up in the trace. A single model message can contain several tool calls, and each one gets a result back in the next message.
 
-Notice: automatic function calling is switched off in `GeminiModel` (`AutomaticFunctionCallingConfig(disable=True)`), so the SDK does not run the loop for you and every step is visible in the trace. A model message can carry several tool calls; each gets a result in the same tool message.
-
-Try: give it a nonexistent path. The run crashes with FileNotFoundError. That is the first thing v3 fixes.
+Give it a path that doesn't exist and the whole run crashes with FileNotFoundError. v3 deals with that.
 
 ### v2: more tools
 
-`read_file`, `write_file`, `list_dir`, `run_shell`. The loop is unchanged; only the tool list grew. Adding capability is cheap, which is exactly why it is dangerous.
-
-Notice: nothing stops the agent from writing anywhere or running any command, and any tool exception still kills the run.
+`read_file`, `write_file`, `list_dir` and `run_shell`. The loop is exactly the same as v1, only the tool list is longer. Nothing restricts where it can write or what it can run, and an exception in any tool still ends the run.
 
 ### v3: guardrails
 
-Four additions, all small:
+Four changes:
 
-- Permissions: tools marked `risky` (`write_file`, `run_shell`) ask y/n first. A denial is not an exception; the model receives "Error: permission denied by user" and can change course.
-- Sandbox: every path is resolved against the sandbox folder, including symlinks, and rejected if it lands outside (`../x`, `/etc/passwd`).
-- Step limit: the loop is `for step in range(max_steps)`. A model that never stops gets cut off with `stop="max_steps"`.
-- Errors as results: any tool exception becomes an `Error: ...` tool result, so the model can retry or adapt.
+- `write_file` and `run_shell` ask y/n before running. If you say no, the model gets "Error: permission denied by user" back as the tool result and can try something else.
+- Every path is resolved against the sandbox folder (symlinks included) and rejected if it ends up outside it, so `../x` and `/etc/passwd` both fail.
+- The loop is capped at `max_steps`. If the model never stops, the run ends with `stop="max_steps"`.
+- Tool exceptions become `Error: ...` results that go back to the model, so it can retry or change approach.
 
-Try: answer `n` to the write prompt and watch the trace. Run with `--max-steps 2` to hit the limit.
+Answer `n` at the write prompt to see a denial in the trace, or run with `--max-steps 2` to hit the limit.
 
-### v4: context trimming and a todo tool
+### v4: trimming and a todo list
 
-Long tasks fill the context window. `trim()` shrinks what is sent to the model on each call: keep the task and the most recent model/tool pairs, blank out older tool outputs, then drop the oldest pairs if still over budget. Pairs are kept together so the history stays valid for the API. The full transcript is kept locally; only the copy sent to the model is trimmed.
+Long tasks fill up the context window, so before each model call `trim()` shortens what gets sent: it keeps the original task and the last couple of model/tool exchanges, blanks out older tool outputs, and if that isn't enough, drops the oldest exchanges. Exchanges are dropped whole so a tool call never loses its result, which the API would reject. The full history stays in memory; only the copy sent to the model is trimmed.
 
-Trimming would also erase the model's plan, so the plan lives outside the transcript: the `update_todos` tool edits a list held by the harness, and the current list is added to the system prompt on every turn. State that must survive belongs in the harness, not in the chat history.
+Trimming would also throw away the model's plan, so the plan is kept outside the transcript. The `update_todos` tool edits a list held by the harness, and that list is added to the system prompt on every turn.
 
-Try: `python v4_context.py --fake --yes --max-chars 700` and look for `[trim]` lines in the trace.
+To see trimming happen, run `python v4_context.py --fake --yes --max-chars 700` and look for `[trim]` lines.
 
-## Choices made and limits
+## Notes and limits
 
-- Default model is `gemini-3.1-flash-lite` (chosen from Google's deprecation notes because `gemini-2.5-flash` is scheduled for shutdown). It is configurable.
-- `GeminiModel` was written against the google-genai SDK and checked offline against a stub client (message conversion, function declarations, function-calling-disabled config). It has not been run against the live API.
-- Gemini 3 models require "thought signatures" to be sent back with function calls. `Message.raw` keeps the provider's original response content and the adapter replays it unchanged.
-- `run_shell` runs with the sandbox as its working directory and a 10 second timeout, but a shell can still `cd ..`. The sandbox check covers the file tools; the shell is guarded only by the permission prompt. Do not treat this as real isolation.
-- v1 and v2 use plain relative paths from the current directory (hence `sandbox/...` in their tasks); v3 and v4 treat the sandbox folder as the root.
+- The Gemini adapter hasn't been run against the live API yet. It was only checked against a stub client for message conversion, tool declarations and the function-calling-off config. Treat the first real run as its first real test.
+- Gemini 3 models want their "thought signatures" sent back with function calls. `Message.raw` keeps the provider's original response and the adapter replays it unchanged.
+- `run_shell` uses the sandbox as its working directory and has a 10 second timeout, but a shell command can still `cd ..`. Only the permission prompt guards it, so don't treat it as real isolation. The path checks apply to the file tools.
+- v1 and v2 use plain relative paths, which is why their task mentions `sandbox/...`. v3 and v4 treat the sandbox folder as the root.
 - v1 and v2 use `while True` on purpose so the step limit in v3 is a visible change. v3 and v4 return a `Result(text, steps, stop)`.
-- v4 measures context in characters, not tokens, to stay dependency-free.
-- Tool output is truncated to 10,000 characters in v3 and v4.
-- `--fake` replies are scripted: the "summary" is canned text matching the sample files, not the output of a model.
-- v4 imports the tools and `execute` from v3 rather than copying them.
+- v4 counts characters, not tokens, to avoid another dependency. Tool output is cut at 10,000 characters in v3 and v4.
+- v4 imports its tools and `execute` from v3 instead of copying them.
