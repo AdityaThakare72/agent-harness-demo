@@ -1,0 +1,6 @@
+Bug #482: export to CSV drops the last row
+Severity: medium
+Steps: open any report with more than 100 rows, click Export.
+Expected: all rows exported. Actual: final row missing.
+Suspected cause: off-by-one in the pagination loop in export.py.
+Workaround: add a blank row at the end of the report before exporting.

@@ -1,0 +1,4 @@
+Standup notes - Monday
+- Priya finished the login page redesign; QA starts Tuesday.
+- Marco is blocked on the payments API: sandbox keys expired.
+- Deploy freeze begins Friday at 17:00 for the quarterly audit.

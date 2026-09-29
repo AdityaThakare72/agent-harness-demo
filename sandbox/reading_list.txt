@@ -1,0 +1,4 @@
+Reading list
+1. "Designing Data-Intensive Applications" - chapters 5 and 6 on replication and partitioning
+2. "The Pragmatic Programmer" - re-read the section on tracer bullets
+3. A short paper on retrieval-augmented generation evaluation
